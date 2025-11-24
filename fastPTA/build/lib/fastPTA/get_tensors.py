@@ -175,29 +175,18 @@ def gamma_pulsar_pair_analytical(
     
     
     # First term 
-    num1 = (xdotn**2 + ydotn**2 + (xdotn)**2*(ydotn)**2 - 1)/8
+    num1 = xdotn**2 + ydotn**2 + (xdotn**2)*(ydotn)**2 - 1
     denom = (1 + xdotn)*(1 + ydotn)
     
     # Second term
-    num2 = (xdoty**2 - 2*xdoty*xdotn*ydotn)/4
+    num2 = xdoty**2 - 2*xdoty*xdotn*ydotn
     
-    num = num1 + num2
 
     # Where the denominator is non zero, just numerator / denominator,
     # where it's zero a bit more care is needed, if pI != pJ is zero
     
     # CHECK if we want this same rule
-    response = jnp.where(denom != 0.0, num/denom, 0.0)
-    
-    conditions = (
-        (denom == 0.0) &
-        (jnp.abs(xdoty - 1.0) < 1e-10)  # xdoty == 1 implies x == y
-    )
-    
-    gamma = jnp.where(
-        conditions, 
-        0.5,  # The limit we calculated: 1/2
-        response)
+    gamma = jnp.where(denom != 0.0, (num1 + 2*num2)/ (8*denom), 0.0)
     
     # conditions = (
     #     (denominator == 0.0)
@@ -275,53 +264,31 @@ def gamma(x, n):
 
     """
     
-    # x_a · n - shape will be (N, pp)
-    xdotn = jnp.einsum("iv,pv->ip", x, n)
-    
-    # (x_a · x_b) - shape will be (N, N)
-    xdotx = jnp.einsum("iv,jv->ij", x, x)
 
-    # Denominator: (1 + x_a·n)(1 + x_b·n) - shape (N, N, pp)
-    summ = 1 + xdotn  # shape (N, pp)
-    denom = summ[:, None, :] * summ[None, :, :]  # shape (N, N, pp)
+     # x_a · n
+    xdotn = jnp.einsum("iv,jv->ij", x, n)   # shape (N,)
 
-    # First numerator term: (xa·n)^2 + (xb·n)^2 + (xa·n)^2(xb·n)^2 - 1
-    # shape (N, N, pp)
-    xdotn_i = xdotn[:, None, :]  # shape (N, 1, pp)
-    xdotn_j = xdotn[None, :, :]  # shape (1, N, pp)
-    
+    # (x_a · x_b)
+    xdotx = jnp.einsum("iv,jv->ij", x, x)  # shape (N, N)
+
+    # Denominator: (1 + x_a·n)(1 + x_b·n)
+    summ = 1 + xdotn
+    denom = summ[:, None, :] * summ[None, ...]
+
+    # First big numerator: (xa·n)^2 + (xb·n)^2 + (xa·n)^2(xb·n)^2 - 1
     num1 = (
-        xdotn_i**2 + 
-        xdotn_j**2 + 
-        (xdotn_i**2) * (xdotn_j**2) - 
-        1.0
-    )
+    (xdotn[:, None, :] ** 2)
+    + (xdotn[None, :, :] ** 2)
+    + (xdotn[:, None, :] ** 2) * (xdotn[None, :, :] ** 2)
+    - 1.0)
 
-    # Second numerator term: (xa·xb)^2 - 2(xa·xb)(xa·n)(xb·n)
-    # shape (N, N, pp)
-    xdotx_expanded = xdotx[..., None]  # shape (N, N, 1) -> broadcast to (N, N, pp)
-    num2 = (
-        xdotx_expanded**2 - 
-        2.0 * xdotx_expanded * xdotn_i * xdotn_j
-    )
 
-    # Combine numerators with proper coefficients
-    total_numerator = (num1 + 2 * num2) / 8.0  # shape (N, N, pp)
-
-    # Initial calculation
-    gamma_val = jnp.where(denom != 0.0, total_numerator / denom, 0.0)
-
-    # Handle the special case: denominator = 0 AND x_i = x_j
-    # Create condition mask
-    x_i_equals_x_j = jnp.isclose(xdotx, 1.0, atol=1e-10)[..., None]  # shape (N, N, 1)
-    denominator_zero = (denom == 0.0)  # shape (N, N, pp)
-    special_condition = denominator_zero & x_i_equals_x_j
-
-    # For the special case, the value should be 0.5 (from our limit calculation)
-    gamma = jnp.where(special_condition, 0.5, gamma_val)
+    # Second numerator: (xa·xb)^2 - 2(xa·xb)(xa·n)(xb·n)
+    num2 = (xdotx[..., None] ** 2- 2.0 * xdotx[..., None] * (xdotn[:, None, :] * xdotn[None, :, :]))
+    # Put it together
+    gamma = jnp.where(denom != 0.0, (num1 + 2*num2) / (8*denom), 0.0)
 
     return gamma
-
 
 
 
@@ -448,7 +415,7 @@ def get_correlations_lm_IJ(
     hat_k = gds.unit_vector(theta_k, phi_k)
 
     # Compute gamma in all the pixels, the shape is (N, N, pp)
-    gamma_pq =  gamma(p_I, hat_k)
+    gamma_pq = 3.0 / 8.0 * gamma(p_I, hat_k)
 
     # Compute the correlations on lm basis
     if lm_basis.lower() == "spherical_harmonics_basis":

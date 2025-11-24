@@ -67,7 +67,7 @@ n_points = int(1e4)
 N_realizations_in_plot = 32
 
 # Number of cores to be used for parallel computations
-num_cores = cpu_count()
+num_cores = 1#cpu_count()
 
 # %%
 
@@ -143,70 +143,104 @@ except FileNotFoundError:
 # %%
 
 
-try:
-    if regenerate_sample_data:
-        raise FileNotFoundError("Flag forces regeneration")
 
-    Cl_limits = np.loadtxt("generated_data/Cl_limits_" + outname + ".dat")
-    Cl_limits_prior = np.loadtxt(
-        "generated_data/Cl_limits_prior_" + outname + ".dat"
+# try:
+#     if regenerate_sample_data:
+#         raise FileNotFoundError("Flag forces regeneration")
+
+#     Cl_limits = np.loadtxt("generated_data/Cl_limits_" + outname + ".dat")
+#     Cl_limits_prior = np.loadtxt(
+#         "generated_data/Cl_limits_prior_" + outname + ".dat"
+#     )
+
+#     if len(Cl_limits) != N_realizations:
+#         raise FileNotFoundError("Flag forces regeneration")
+
+# except FileNotFoundError:
+
+#     cov = ut.compute_inverse(fisher)
+
+#     for j in range(min(N_realizations_in_plot, N_realizations)):
+#         arg_grid = [
+#             [means, cov[j]]
+#             for j in range(min(N_realizations_in_plot, N_realizations))
+#         ]
+
+#     def get_Cl_wrapper(parameters):
+#         return sph.get_Cl_limits(
+#             *parameters,
+#             shape_params,
+#             n_points=n_points,
+#             limit_cl=limit_cl,
+#             max_iter=100,
+#             prior=5.0 / (4.0 * np.pi),
+#         )
+
+#     start = time.time()
+#     with Pool(num_cores) as p:
+#         res = np.array(p.map(get_Cl_wrapper, arg_grid, chunksize=1))
+#     end = time.time()
+#     print("Time to compute Cl limts:", end - start)
+    
+    
+
+#     Cl_limits = res[:, 0]
+#     Cl_limits_prior = res[:, 1]
+
+#     Cl_limits_prior = Cl_limits_prior[np.isfinite(Cl_limits_prior[:, 0])]
+#     np.savetxt("generated_data/Cl_limits_" + outname + ".dat", Cl_limits)
+#     np.savetxt(
+#         "generated_data/Cl_limits_prior_" + outname + ".dat", Cl_limits_prior
+#     )
+
+# # Normalize with C0
+# Cl_limits *= 4 * np.pi
+# Cl_limits_prior *= 4 * np.pi
+# %%
+
+cov = ut.compute_inverse(fisher)
+
+for j in range(min(N_realizations_in_plot, N_realizations)):
+    arg_grid = [
+        [means, cov[j]]
+        for j in range(min(N_realizations_in_plot, N_realizations))
+    ]
+
+def get_Cl_wrapper(parameters):
+    return sph.get_Cl_limits(
+        *parameters,
+        shape_params,
+        n_points=n_points,
+        limit_cl=limit_cl,
+        max_iter=100,
+        prior=5.0 / (4.0 * np.pi),
     )
 
-    if len(Cl_limits) != N_realizations:
-        raise FileNotFoundError("Flag forces regeneration")
+# start = time.time()
+# with Pool(num_cores) as p:
+#     res = np.array(p.map(get_Cl_wrapper, arg_grid, chunksize=1))
+# end = time.time()
+# print("Time to compute Cl limts:", end - start)
+res = []
+start = time.time()
+for args in arg_grid:
+    res.append(get_Cl_wrapper(args))
+res = np.array(res)
+end = time.time()
+print("Time to compute Cl limits:", end - start)
 
-except FileNotFoundError:
 
-    cov = ut.compute_inverse(fisher)
 
-    for j in range(min(N_realizations_in_plot, N_realizations)):
-        arg_grid = [
-            [means, cov[j]]
-            for j in range(min(N_realizations_in_plot, N_realizations))
-        ]
+Cl_limits = res[:, 0]
+Cl_limits_prior = res[:, 1]
 
-    def get_Cl_wrapper(parameters):
-        return sph.get_Cl_limits(
-            *parameters,
-            shape_params,
-            n_points=n_points,
-            limit_cl=limit_cl,
-            max_iter=100,
-            prior=5.0 / (4.0 * np.pi),
-        )
+Cl_limits_prior = Cl_limits_prior[np.isfinite(Cl_limits_prior[:, 0])]
+np.savetxt("generated_data/Cl_limits_" + outname + ".dat", Cl_limits)
+np.savetxt(
+    "generated_data/Cl_limits_prior_" + outname + ".dat", Cl_limits_prior
+)
+# %%
 
-    start = time.time()
-    with Pool(num_cores) as p:
-        res = np.array(p.map(get_Cl_wrapper, arg_grid, chunksize=1))
-    end = time.time()
-    print("Time to compute Cl limts:", end - start)
-    
-    # Cl_limits = []
-    # Cl_limits_prior = []
-    
-    # for j in range(N_realizations_in_plot):
-    #     cl, cl_prior = sph.get_Cl_limits(
-    #         means, cov[j],
-    #         shape_params,
-    #         n_points=n_points,
-    #         limit_cl=limit_cl,
-    #         max_iter=100,
-    #         prior=5.0 / (4.0 * np.pi),
-    #     )
-    #     Cl_limits.append(cl)
-    #     Cl_limits_prior.append(cl_prior)
-    
-    # Cl_limits = np.array(Cl_limits)
-    # Cl_limits_prior = np.array(Cl_limits_prior)
-
-    Cl_limits = res[:, 0]
-    Cl_limits_prior = res[:, 1]
-
-    Cl_limits_prior = Cl_limits_prior[np.isfinite(Cl_limits_prior[:, 0])]
-    np.savetxt("generated_data/Cl_limits_" + outname + ".dat", Cl_limits)
-    np.savetxt(
-        "generated_data/Cl_limits_prior_" + outname + ".dat", Cl_limits_prior
-    )
 
 # Normalize with C0
 Cl_limits *= 4 * np.pi
@@ -221,9 +255,7 @@ err_high_Cl_limits = np.quantile(Cl_limits, 0.975, axis=0) - mean_Cl_limits
 
 # Compute the mean and the errors on the Cls with the prior
 mean_Cl_limits_prior = np.mean(Cl_limits_prior, axis=0)
-err_low_Cl_limits_prior = mean_Cl_limits_prior - np.quantile(
-    Cl_limits_prior, 0.025, axis=0
-)
+err_low_Cl_limits_prior = mean_Cl_limits_prior - np.quantile(Cl_limits_prior, 0.025, axis=0)
 err_high_Cl_limits_prior = (
     np.quantile(Cl_limits_prior, 0.975, axis=0) - mean_Cl_limits_prior
 )
@@ -245,20 +277,17 @@ print("C_l / C_0 =", Cl_prior)
 
 # %%
 
-limits_NG = np.loadtxt("data_paper_2/limits_Cl_powerlaw_lin_ng15.dat")[:, 1]
+limits_NG = np.loadtxt("examples/examples_paper_anisotropies/data_paper_2/limits_Cl_powerlaw_lin_ng15.dat")[:, 1]
 
 # %%
 
-plt.rc("text", usetex=True)
+# Use mathtext (no external LaTeX install needed)
+plt.rc("text", usetex=False)
 plt.rc("font", family="serif", size=11)
-plt.rcParams["text.latex.preamble"] = (
-    r"\usepackage{amsmath} \usepackage{amssymb}"
-)
+
 fig = plt.figure(figsize=(0.4 * 12.0, 0.4 * 11.0), dpi=150, edgecolor="white")
 ax = fig.add_subplot(1, 1, 1)
-ax.tick_params(
-    axis="both", which="both", labelsize=11, direction="in", width=0.5
-)
+ax.tick_params(axis="both", which="both", labelsize=11, direction="in", width=0.5)
 ax.xaxis.set_ticks_position("both")
 ax.yaxis.set_ticks_position("both")
 
@@ -266,7 +295,7 @@ ax.yaxis.set_ticks_position("both")
 ax.semilogy(
     np.arange(1, l_max + 1),
     limits_NG,
-    label=r"NANOGrav limits",
+    label="NANOGrav limits",
     color="green",
     marker="x",
     lw=0,
@@ -275,8 +304,8 @@ ax.semilogy(
 ax.semilogy(
     np.arange(1, l_max + 1),
     Cl_prior,
-    "blue",
-    label=r"Only prior",
+    color="blue",
+    label="Only prior",
 )
 
 ax.errorbar(
@@ -284,7 +313,7 @@ ax.errorbar(
     mean_Cl_limits,
     yerr=(err_low_Cl_limits, err_high_Cl_limits),
     color="red",
-    label=r"Fisher",
+    label="Fisher",
     marker=".",
 )
 
@@ -293,12 +322,12 @@ ax.errorbar(
     mean_Cl_limits_prior,
     yerr=(err_low_Cl_limits_prior, err_high_Cl_limits_prior),
     color="grey",
-    label=r"Fisher with prior",
+    label="Fisher with prior",
     marker=".",
 )
 
-
 plt.legend(loc="lower right", fontsize=10, handlelength=1.5)
+
 props = dict(
     boxstyle="round",
     facecolor="white",
@@ -310,21 +339,43 @@ props = dict(
 for axis in ["top", "bottom", "left", "right"]:
     ax.spines[axis].set_linewidth(0.5)
 
-    ax.text(
-        1,
-        4.8e0,
-        r"NANOGrav positions, $T_\mathrm{obs} \sim 15 \, \mathrm{yr}$",
-        horizontalalignment="left",
-        fontsize=10,
-        verticalalignment="top",
-        bbox=props,
-        linespacing=1.4,
-    )
+ax.text(
+    1,
+    14,
+    "NANOGrav positions, $T_{\\mathrm{obs}} \\sim 15 \\, \\mathrm{yr}$",
+    horizontalalignment="left",
+    fontsize=10,
+    verticalalignment="top",
+    bbox=props,
+    linespacing=1.4,
+)
 
-    # set x axis label
-    ax.set_xlabel(r"$\ell$")
-    ax.set_ylabel(r"$C_\ell / C_0$")
-    plt.ylim(0.8e-1, 6e0)
+# Axis labels
+ax.set_xlabel(r"$\ell$")
+ax.set_ylabel(r"$C_\ell / C_0$")
+plt.ylim(0.3e-1, 20)
 
-    plt.tight_layout()
-    plt.savefig("plots/Cl_sens_lim_ng_like.pdf")
+plt.tight_layout()
+plt.savefig("plots/Cl_sens_lim_ng_like.pdf")
+plt.show()
+    
+    
+
+
+# Cl_limits = []
+# Cl_limits_prior = []
+
+# for j in range(N_realizations_in_plot):
+#     cl, cl_prior = sph.get_Cl_limits(
+#         means, cov[j],
+#         shape_params,
+#         n_points=n_points,
+#         limit_cl=limit_cl,
+#         max_iter=100,
+#         prior=5.0 / (4.0 * np.pi),
+#     )
+#     Cl_limits.append(cl)
+#     Cl_limits_prior.append(cl_prior)
+
+# Cl_limits = np.array(Cl_limits)
+# Cl_limits_prior = np.array(Cl_limits_prior)
